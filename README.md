@@ -14,3 +14,4 @@ pip install pyzmq
 python lanzar_pc1.py
 
 # Correr PC2
+python lanzar_pc2.py
