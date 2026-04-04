@@ -11,7 +11,7 @@ DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Lanzar procesos de PC2")
+    parser = argparse.ArgumentParser(description="Lanzar BD Principal (PC3)")
     parser.add_argument("--config", default="config.json")
     args = parser.parse_args()
 
@@ -23,35 +23,26 @@ def main():
                "--config", args.config]
         p = subprocess.Popen(cmd)
         procesos.append((nombre, p))
-        print(f"[PC2] {nombre} iniciado (PID {p.pid})")
+        print(f"[PC3] {nombre} iniciado (PID {p.pid})")
         return p
 
-    # 1. BD Replica — hace bind primero
-    lanzar("BD-Replica",    "db_replica.py")
-    time.sleep(0.8)
+    lanzar("BD-Principal", "db_main.py")
 
-    # 2. Control Semaforos — hace bind
-    lanzar("CtrlSemaforos", "semaforos.py")
-    time.sleep(0.8)
-
-    # 3. Analitica — conecta a todos los anteriores
-    lanzar("Analitica",     "analitica.py")
-
-    print(f"\n[PC2] {len(procesos)} procesos activos. Ctrl+C para detener.\n")
+    print("\n[PC3] BD corriendo. Ctrl+C para detener.")
 
     def apagar(sig, frame):
-        print("\n[PC2] Apagando todos los procesos...")
-        for nombre, p in procesos:
+        print("\n[PC3] Apagando...")
+        for _, p in procesos:
             p.terminate()
         sys.exit(0)
 
-    signal.signal(signal.SIGINT,  apagar)
+    signal.signal(signal.SIGINT, apagar)
     signal.signal(signal.SIGTERM, apagar)
 
     while True:
         for nombre, p in procesos:
             if p.poll() is not None:
-                print(f"[PC2] ADVERTENCIA: {nombre} termino inesperadamente.")
+                print(f"[PC3] {nombre} terminó.")
         time.sleep(5)
 
 

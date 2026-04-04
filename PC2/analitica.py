@@ -1,3 +1,4 @@
+from __future__ import annotations
 import zmq
 import json
 import time
@@ -7,7 +8,9 @@ import sys
 import os
 import argparse
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
+
+
+sys.path.insert(0, os.path.dirname(__file__))
 from sensor_base import cargar_config, ts_ahora
 
 sys.path.insert(0, os.path.dirname(__file__))

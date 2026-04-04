@@ -19,7 +19,7 @@ Uso:
     python broker.py --multihilo     # diseño multihilo (E2)
     python broker.py --config otra_config.json
 """
-
+from __future__ import annotations
 import zmq
 import json
 import logging
