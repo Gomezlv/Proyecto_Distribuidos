@@ -39,7 +39,6 @@
     "bd_rep_port":        5581,
     "semaf_port":         5590,
     "monitor_rep_port":   5600,
-    "bd_consulta_port": 5595,
     "health_ping_port":   5599,
     "health_ack_port":    5570
   },

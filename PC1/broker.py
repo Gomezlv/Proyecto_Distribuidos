@@ -14,11 +14,12 @@ Diseños:
   - Diseño Multihilos:           un hilo SUB por topic, todos comparten el
                                  mismo socket PUB (protegido con Lock).
 
-Uso:
+Uso: 
     python broker.py                 # diseño base (single-thread)
     python broker.py --multihilo     # diseño multihilo (E2)
     python broker.py --config otra_config.json
 """
+
 from __future__ import annotations
 import zmq
 import json
@@ -48,13 +49,13 @@ CAMPOS_REQUERIDOS = {
 }
 
 
-def validar_mensaje(raw: bytes) -> dict | None:
-    """
+"""
     Decodifica y valida que el JSON tenga los campos mínimos según su tipo.
 
     Returns:
         dict si el mensaje es válido, None si es inválido.
-    """
+"""
+def validar_mensaje(raw: bytes) -> dict | None:
     try:
         evento = json.loads(raw.decode())
         tipo   = evento.get("tipo_sensor", "")
@@ -107,6 +108,8 @@ class BrokerZMQ:
         self.sub_sockets = []
         self.pub_socket  = None
         self._pub_lock   = threading.Lock()  # usado sólo en modo multihilo
+
+
 
     def inicializar(self) -> None:
         """Crea y configura los sockets SUB y PUB."""
@@ -214,6 +217,7 @@ class BrokerZMQMultihilo(BrokerZMQ):
             self._hilos.append(t)
         try:
             for t in self._hilos:
+                #Espera a que todos los hilos terminen t.join()
                 t.join()
         except KeyboardInterrupt:
             log.info("[BROKER-MT] Detenido por usuario.")
