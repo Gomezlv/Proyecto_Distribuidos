@@ -79,6 +79,29 @@ class ServicioAnalitica:
 
         time.sleep(0.5)
 
+    def _imprimir_reglas(self) -> None:
+        r = self.reglas
+        log.info("=" * 60)
+        log.info("[ANALITICA] REGLAS DE TRAFICO CARGADAS")
+        log.info("=" * 60)
+        log.info(f"  NORMAL      : Q < {r.Q_normal_max}"
+                f"  AND  Vp > {r.Vp_normal_min}"
+                f"  AND  D < {r.D_normal_max}"
+                f"     -> verde {r.tiempo_verde_normal}s")
+        log.info(f"  MODERADO    : (cualquier otro caso)"
+                f"                "
+                f"  -> verde {r.tiempo_verde_moderado}s")
+        log.info(f"  CONGESTION  : Q >= {r.Q_congestion}"
+                f"  OR   Vp < {r.Vp_congestion}"
+                f"  OR   D >= {r.D_normal_max * 2}"
+                f"  -> verde {r.tiempo_verde_congestion}s")
+        log.info(f"  SEVERO      : Q >= {r.Q_severo}"
+                f"  OR   Vp < {r.Vp_severo}"
+                f"           "
+                f"      -> verde {r.tiempo_verde_severo}s")
+        log.info(f"  PRIORIZACION: solicitud manual del operador"
+                f"          -> verde duracion por parametro")
+        log.info("=" * 60)
 
     def _sensor_autorizado(self, sensor_id: str) -> bool:
         if sensor_id not in self.sensores_registry:
@@ -205,6 +228,7 @@ class ServicioAnalitica:
         )
         hilo_ausentes.start()
 
+        self._imprimir_reglas()
         log.info("[ANALITICA] Servicio iniciado. Esperando eventos del Broker...")
         try:
             while self._activo:
