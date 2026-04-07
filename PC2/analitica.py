@@ -229,6 +229,7 @@ class ServicioAnalitica:
         hilo_ausentes.start()
 
         self._imprimir_reglas()
+        
         log.info("[ANALITICA] Servicio iniciado. Esperando eventos del Broker...")
         try:
             while self._activo:

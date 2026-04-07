@@ -46,6 +46,8 @@ class BDPrincipal:
         self.pull_ping = self.ctx.socket(zmq.PULL)
         self.pull_ping.bind(f"tcp://0.0.0.0:{red['health_ping_port']}")
 
+        self.log_estado_inicial()
+        
     def _crear_tablas(self) -> None:
         with self.conn:
             self.conn.executescript("""
@@ -79,6 +81,33 @@ class BDPrincipal:
                     recibido_en REAL NOT NULL
                 );
             """)
+
+    def log_estado_inicial(self) -> None:
+        try:
+            tablas = {
+                "eventos_sensores":   "SELECT COUNT(*), MAX(timestamp) FROM eventos_sensores",
+                "estados_semaforos":  "SELECT COUNT(*), MAX(timestamp) FROM estados_semaforos",
+                "alertas_congestion": "SELECT COUNT(*), MAX(timestamp) FROM alertas_congestion",
+            }
+            log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
+            log.info(f"[BD-PRINCIPAL] Estado inicial de '{self.db_path}'")
+            log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
+
+            total = 0
+            for tabla, sql in tablas.items():
+                with self._lock:
+                    fila = self.conn.execute(sql).fetchone()
+                n   = fila[0] if fila[0] else 0
+                ult = fila[1] if fila[1] else "sin registros"
+                total += n
+                log.info(f"[BD-PRINCIPAL]   {tabla:<28} filas={n:<6} último={ult}")
+
+            log.info("[BD-PRINCIPAL] ──────────────────────────────────────")
+            log.info(f"[BD-PRINCIPAL]   Total registros: {total}")
+            log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
+        except Exception as exc:
+            log.warning(f"[BD-PRINCIPAL] No se pudo leer estado inicial: {exc}")   
+
 
     def _despachar(self, mensaje: dict) -> None:
         tipo = mensaje.get("tipo_msg", "evento")
