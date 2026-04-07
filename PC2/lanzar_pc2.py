@@ -12,7 +12,7 @@ DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
 
 def main():
     parser = argparse.ArgumentParser(description="Lanzar procesos de PC2")
-    parser.add_argument("--config", default="config.json")
+    parser.add_argument("--config", default="../PC1/config.json"),
     args = parser.parse_args()
 
     procesos = []

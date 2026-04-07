@@ -10,7 +10,7 @@ import argparse
 
 
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
 from sensor_base import cargar_config, ts_ahora
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -229,7 +229,7 @@ class ServicioAnalitica:
         hilo_ausentes.start()
 
         self._imprimir_reglas()
-        
+
         log.info("[ANALITICA] Servicio iniciado. Esperando eventos del Broker...")
         try:
             while self._activo:

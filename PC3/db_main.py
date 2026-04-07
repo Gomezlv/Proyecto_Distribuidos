@@ -9,7 +9,7 @@ import sys
 import os
 import argparse
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
 from sensor_base import cargar_config
 
 
@@ -47,7 +47,7 @@ class BDPrincipal:
         self.pull_ping.bind(f"tcp://0.0.0.0:{red['health_ping_port']}")
 
         self.log_estado_inicial()
-        
+
     def _crear_tablas(self) -> None:
         with self.conn:
             self.conn.executescript("""
@@ -215,7 +215,7 @@ class BDPrincipal:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config.json")
+    parser.add_argument("--config", default="../PC1/config.json"),
     parser.add_argument("--db", default=DB_PATH_DEFAULT)
     args = parser.parse_args()
 
