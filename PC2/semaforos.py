@@ -1,3 +1,4 @@
+from __future__ import annotations
 import zmq
 import json
 import time
@@ -9,7 +10,6 @@ import argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
 from sensor_base import cargar_config
-
 
 logging.basicConfig(
     level=logging.INFO,

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import zmq
 import json
 import sqlite3
@@ -46,6 +47,8 @@ class BDServicio:
         self.pull_socket.bind(endpoint)
         log.info(f"[BD-{self.rol.upper()}] PULL escuchando en {endpoint}")
 
+        self.log_estado_inicial()
+
     def _crear_tablas(self) -> None:
         with self.conn:
             self.conn.executescript("""
@@ -86,6 +89,35 @@ class BDServicio:
                 CREATE INDEX IF NOT EXISTS idx_semaf_interseccion
                     ON estados_semaforos(interseccion);
             """)
+
+    def log_estado_inicial(self) -> None:
+        """Imprime el estado actual de la BD al arrancar el servicio."""
+        try:
+            tablas = {
+                "eventos_sensores":   "SELECT COUNT(*), MAX(timestamp) FROM eventos_sensores",
+                "estados_semaforos":  "SELECT COUNT(*), MAX(timestamp) FROM estados_semaforos",
+                "alertas_congestion": "SELECT COUNT(*), MAX(timestamp) FROM alertas_congestion",
+            }
+            log.info(f"[BD-{self.rol.upper()}] ══════════════════════════════════════")
+            log.info(f"[BD-{self.rol.upper()}] Estado inicial de '{self.db_path}'")
+            log.info(f"[BD-{self.rol.upper()}] ══════════════════════════════════════")
+
+            total_registros = 0
+            for tabla, sql in tablas.items():
+                with self._lock:
+                    fila = self.conn.execute(sql).fetchone()
+                n   = fila[0] if fila[0] else 0
+                ult = fila[1] if fila[1] else "sin registros"
+                total_registros += n
+                log.info(
+                    f"[BD-{self.rol.upper()}]   {tabla:<28} filas={n:<6} último={ult}"
+                )
+
+            log.info(f"[BD-{self.rol.upper()}] ──────────────────────────────────────")
+            log.info(f"[BD-{self.rol.upper()}]   Total registros: {total_registros}")
+            log.info(f"[BD-{self.rol.upper()}] ══════════════════════════════════════")
+        except Exception as exc:
+            log.warning(f"[BD-{self.rol.upper()}] No se pudo leer estado inicial: {exc}")
 
     def insertar_evento(self, evento: dict) -> None:
         """Persiste un evento de sensor."""

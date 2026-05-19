@@ -1,3 +1,4 @@
+from __future__ import annotations
 import random
 import argparse
 import logging
@@ -83,6 +84,7 @@ def main():
                     broker_host=red["pc1_ip"],
                     broker_port=red["sensor_camara_port"]
                 )
+                #Deamon= True. Muere el hilo si el proceso padre tambien muere.
                 t = threading.Thread(target=sensor.ejecutar, daemon=True, name=s["id"])
                 t.start()
                 hilos.append(t)
