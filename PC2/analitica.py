@@ -77,6 +77,14 @@ class ServicioAnalitica:
         self.push_semaf.connect(semaf_ep)
         log.info(f"[ANALITICA] PUSH Semaforos -> {semaf_ep}")
 
+        # REP <- Monitoreo/Consulta (PC3)
+        self.rep_comandos = self.ctx.socket(zmq.REP)
+        self.rep_comandos.setsockopt(zmq.RCVHWM, 1000)
+        self.rep_comandos.setsockopt(zmq.LINGER, 2000)
+        rep_ep = f"tcp://0.0.0.0:{red['analitica_rep_port']}"
+        self.rep_comandos.bind(rep_ep)
+        log.info(f"[ANALITICA] REP Comandos -> {rep_ep}")
+
         time.sleep(0.5)
 
     def _imprimir_reglas(self) -> None:
@@ -145,17 +153,102 @@ class ServicioAnalitica:
         self.push_semaf.send(json.dumps(cmd).encode())
         self._persistir(cmd)
 
+    def _aplicar_orden_manual(self, cmd: dict, accion: str) -> dict:
+        interseccion = cmd.get("interseccion", "")
+        if not interseccion:
+            return {"ok": False, "error": "Falta 'interseccion'."}
+
+        motivo = cmd.get("motivo", "indicacion_directa")
+        duracion = int(cmd.get("duracion_seg", self.reglas.tiempo_verde_severo))
+
+        if accion == "forzar_semaforo":
+            estado = cmd.get("estado", "VERDE").upper()
+            if estado not in ("VERDE", "ROJO"):
+                return {"ok": False, "error": "Estado debe ser VERDE o ROJO."}
+            etiqueta_alerta = "FORZADO_MANUAL"
+            accion_tomada = f"Semaforo forzado a {estado} por {motivo}"
+        elif accion == "extender_verde":
+            estado = "VERDE"
+            etiqueta_alerta = "EXTENSION_VERDE"
+            accion_tomada = f"Verde extendido {duracion}s — {motivo}"
+        else:
+            estado = "VERDE"
+            etiqueta_alerta = "PRIORIZACION"
+            accion_tomada = f"Priorizacion manual por {motivo}"
+
+        self._log_diagnostico(
+            interseccion,
+            EstadoTrafico.PRIORIZACION,
+            self.datos_interseccion.get(interseccion, {}).get("Q", 0),
+            self.datos_interseccion.get(interseccion, {}).get("Vp", 50.0),
+            self.datos_interseccion.get(interseccion, {}).get("D", 0),
+            duracion,
+        )
+        log.info(
+            f"[ANALITICA] ORDEN MANUAL {accion} | {interseccion} | "
+            f"{estado} {duracion}s | {motivo}"
+        )
+
+        self._enviar_comando_semaforo(interseccion, estado, duracion, motivo)
+        alerta = {
+            "tipo_msg": "alerta",
+            "interseccion": interseccion,
+            "nivel": etiqueta_alerta,
+            "accion_tomada": accion_tomada,
+            "Q": self.datos_interseccion.get(interseccion, {}).get("Q", 0),
+            "Vp": self.datos_interseccion.get(interseccion, {}).get("Vp", 50.0),
+            "D": self.datos_interseccion.get(interseccion, {}).get("D", 0),
+            "timestamp": ts_ahora(),
+        }
+        self._persistir(alerta)
+        return {
+            "ok": True,
+            "mensaje": "Orden aplicada.",
+            "accion": accion,
+            "interseccion": interseccion,
+        }
+
+    def _handle_comando(self, cmd: dict) -> dict:
+        accion = cmd.get("accion", "")
+        if accion not in ("priorizar", "extender_verde", "forzar_semaforo"):
+            return {"ok": False, "error": f"Accion no soportada: {accion!r}"}
+        if cmd.get("token") != self.secret_key:
+            return {"ok": False, "error": "Token invalido."}
+        return self._aplicar_orden_manual(cmd, accion)
+
+    def _hilo_comandos(self) -> None:
+        while self._activo:
+            try:
+                raw = self.rep_comandos.recv(flags=zmq.NOBLOCK)
+                try:
+                    cmd = json.loads(raw.decode())
+                    respuesta = self._handle_comando(cmd)
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    respuesta = {"ok": False, "error": f"JSON invalido: {e}"}
+                self.rep_comandos.send_json(respuesta)
+            except zmq.Again:
+                time.sleep(0.05)
+
     def _persistir(self, mensaje: dict) -> None:
-        """Envia el mensaje a BD Principal (PC3) y BD Replica (PC2)."""
+        """Persiste en BD principal (PC3) y BD réplica (PC2) al mismo tiempo."""
         payload = json.dumps(mensaje).encode()
+        ok_princ = ok_rep = False
         try:
             self.push_bd_princ.send(payload, flags=zmq.NOBLOCK)
+            ok_princ = True
         except zmq.Again:
-            log.warning("[ANALITICA] BD Principal HWM lleno — mensaje descartado")
+            log.warning("[ANALITICA] BD Principal HWM lleno — reintentar en ciclo siguiente")
         try:
             self.push_bd_rep.send(payload, flags=zmq.NOBLOCK)
+            ok_rep = True
         except zmq.Again:
             log.warning("[ANALITICA] BD Replica HWM lleno")
+        if not ok_princ or not ok_rep:
+            log.warning(
+                f"[ANALITICA] Persistencia dual incompleta "
+                f"(principal={ok_princ}, replica={ok_rep}) "
+                f"| {mensaje.get('tipo_msg')} {mensaje.get('interseccion', mensaje.get('sensor_id', ''))}"
+            )
 
     def _log_diagnostico(self, interseccion: str, estado: EstadoTrafico,
                           Q: float, Vp: float, D: float, duracion: int) -> None:
@@ -228,6 +321,13 @@ class ServicioAnalitica:
         )
         hilo_ausentes.start()
 
+        hilo_cmd = threading.Thread(
+            target=self._hilo_comandos,
+            name="hilo-comandos",
+            daemon=True
+        )
+        hilo_cmd.start()
+
         self._imprimir_reglas()
 
         log.info("[ANALITICA] Servicio iniciado. Esperando eventos del Broker...")
@@ -252,7 +352,8 @@ class ServicioAnalitica:
     def cerrar(self) -> None:
         self._activo = False
         for sock in (self.sub_broker, self.push_bd_princ,
-                     self.push_bd_rep, self.push_semaf):
+                     self.push_bd_rep, self.push_semaf,
+                     self.rep_comandos):
             sock.close()
         self.ctx.term()
         log.info("[ANALITICA] Recursos ZMQ liberados.")

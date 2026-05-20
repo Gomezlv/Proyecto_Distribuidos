@@ -11,6 +11,7 @@ import argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
 from sensor_base import cargar_config
+from bd_consultas import manejar_consulta
 
 
 logging.basicConfig(
@@ -46,6 +47,14 @@ class BDServicio:
         endpoint = f"tcp://0.0.0.0:{pull_port}"
         self.pull_socket.bind(endpoint)
         log.info(f"[BD-{self.rol.upper()}] PULL escuchando en {endpoint}")
+
+        red = cfg["red"]
+        self.rep_consultas = self.ctx.socket(zmq.REP)
+        self.rep_consultas.setsockopt(zmq.RCVHWM, 1000)
+        self.rep_consultas.setsockopt(zmq.LINGER, 2000)
+        ep_q = f"tcp://0.0.0.0:{red['bd_replica_query_port']}"
+        self.rep_consultas.bind(ep_q)
+        log.info(f"[BD-{self.rol.upper()}] REP consultas Monitoreo -> {ep_q}")
 
         self.log_estado_inicial()
 
@@ -242,24 +251,43 @@ class BDServicio:
         else:
             log.warning(f"[BD-{self.rol.upper()}] tipo_msg desconocido: {tipo!r}")
 
+    def _hilo_escritura(self) -> None:
+        while self._activo:
+            try:
+                raw = self.pull_socket.recv(flags=zmq.NOBLOCK)
+                try:
+                    msg = json.loads(raw.decode())
+                    self._despachar(msg)
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    log.warning(f"[BD-{self.rol.upper()}] JSON inválido: {e}")
+            except zmq.Again:
+                time.sleep(0.05)
+
+    def _hilo_consultas(self) -> None:
+        while self._activo:
+            try:
+                raw = self.rep_consultas.recv(flags=zmq.NOBLOCK)
+                try:
+                    req = json.loads(raw.decode())
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    self.rep_consultas.send_json({"ok": False, "error": f"JSON invalido: {e}"})
+                    continue
+                resp = manejar_consulta(self.conn, self._lock, req, rol="replica")
+                self.rep_consultas.send_json(resp)
+            except zmq.Again:
+                time.sleep(0.02)
+
     def ejecutar(self) -> None:
-        log.info(f"[BD-{self.rol.upper()}] Servicio iniciado. Esperando eventos...")
+        log.info(f"[BD-{self.rol.upper()}] Servicio iniciado (PULL + REP consultas).")
+        threading.Thread(
+            target=self._hilo_escritura, daemon=True, name="bd-rep-escritura"
+        ).start()
+        threading.Thread(
+            target=self._hilo_consultas, daemon=True, name="bd-rep-consultas"
+        ).start()
         try:
             while self._activo:
-                try:
-                    raw = self.pull_socket.recv(flags=zmq.NOBLOCK)
-                    try:
-                        msg = json.loads(raw.decode())
-                        self._despachar(msg)
-                        log.info(
-                            f"[BD-{self.rol.upper()}] Persistido "
-                            f"{msg.get('tipo_msg','?')} | "
-                            f"{msg.get('sensor_id', msg.get('interseccion','?'))}"
-                        )
-                    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                        log.warning(f"[BD-{self.rol.upper()}] JSON inválido: {e}")
-                except zmq.Again:
-                    time.sleep(0.05)
+                time.sleep(1)
         except KeyboardInterrupt:
             log.info(f"[BD-{self.rol.upper()}] Detenido por usuario.")
         finally:
@@ -270,6 +298,7 @@ class BDServicio:
         total = self.contar_eventos()
         log.info(f"[BD-{self.rol.upper()}] Total eventos_sensores: {total}")
         self.pull_socket.close()
+        self.rep_consultas.close()
         self.ctx.term()
         self.conn.close()
         log.info(f"[BD-{self.rol.upper()}] Recursos liberados.")

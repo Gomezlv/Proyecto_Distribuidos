@@ -11,24 +11,55 @@ DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Lanzar BD Principal (PC3)")
-    parser.add_argument("--config", default="../PC1/config.json"),
+    parser = argparse.ArgumentParser(description="Lanzar servicios de PC3")
+    parser.add_argument("--config", default="../PC1/config.json")
+    parser.add_argument(
+        "--menu",
+        action="store_true",
+        help="Abrir el menu interactivo de monitoreo y consulta",
+    )
     args = parser.parse_args()
 
     procesos = []
+    db_path = os.path.join(DIRECTORIO, "principal.db")
 
     def lanzar(nombre, script):
         cmd = [sys.executable,
                os.path.join(DIRECTORIO, script),
                "--config", args.config]
+        if script == "db_main.py":
+            cmd.extend(["--db", db_path])
         p = subprocess.Popen(cmd)
         procesos.append((nombre, p))
         print(f"[PC3] {nombre} iniciado (PID {p.pid})")
         return p
 
     lanzar("BD-Principal", "db_main.py")
+    time.sleep(0.8)
+    cmd_monitoreo = [
+        sys.executable,
+        os.path.join(DIRECTORIO, "monitoreo_consulta.py"),
+        "--config",
+        args.config,
+    ]
+    p = subprocess.Popen(cmd_monitoreo)
+    procesos.append(("Monitoreo-Consulta", p))
+    print(f"[PC3] Monitoreo-Consulta iniciado (PID {p.pid})")
 
-    print("\n[PC3] BD corriendo. Ctrl+C para detener.")
+    if args.menu:
+        # El menu es un cliente interactivo aparte del servicio.
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(DIRECTORIO, "monitoreo_consulta.py"),
+                "--config",
+                args.config,
+                "--menu",
+            ],
+            check=False,
+        )
+
+    print("\n[PC3] Servicios corriendo. Ctrl+C para detener.")
 
     def apagar(sig, frame):
         print("\n[PC3] Apagando...")

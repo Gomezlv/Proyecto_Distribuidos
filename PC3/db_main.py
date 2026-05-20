@@ -11,6 +11,7 @@ import argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
 from sensor_base import cargar_config
+from bd_consultas import manejar_consulta
 
 
 logging.basicConfig(
@@ -21,6 +22,7 @@ logging.basicConfig(
 log = logging.getLogger("BDPrincipal")
 
 DB_PATH_DEFAULT = "principal.db"
+ROL = "principal"
 
 
 class BDPrincipal:
@@ -32,19 +34,24 @@ class BDPrincipal:
         self._lock   = threading.Lock()
 
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        with self.conn:
+            self.conn.execute("PRAGMA journal_mode=WAL")
         self._crear_tablas()
 
         red = cfg["red"]
         self.ctx = zmq.Context()
 
-        # recibe datos de analítica
         self.pull_escritura = self.ctx.socket(zmq.PULL)
         self.pull_escritura.setsockopt(zmq.RCVHWM, 5000)
         self.pull_escritura.bind(f"tcp://0.0.0.0:{red['bd_princ_port']}")
+        log.info(f"[BD-PRINCIPAL] PULL escritura :{red['bd_princ_port']}")
 
-        # health check
-        self.pull_ping = self.ctx.socket(zmq.PULL)
-        self.pull_ping.bind(f"tcp://0.0.0.0:{red['health_ping_port']}")
+        self.rep_consultas = self.ctx.socket(zmq.REP)
+        self.rep_consultas.setsockopt(zmq.RCVHWM, 1000)
+        self.rep_consultas.setsockopt(zmq.LINGER, 2000)
+        ep_consultas = f"tcp://0.0.0.0:{red['bd_princ_query_port']}"
+        self.rep_consultas.bind(ep_consultas)
+        log.info(f"[BD-PRINCIPAL] REP consultas Monitoreo -> {ep_consultas}")
 
         self.log_estado_inicial()
 
@@ -80,6 +87,13 @@ class BDPrincipal:
                     timestamp TEXT NOT NULL,
                     recibido_en REAL NOT NULL
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_ev_timestamp
+                    ON eventos_sensores(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_ev_interseccion
+                    ON eventos_sensores(interseccion);
+                CREATE INDEX IF NOT EXISTS idx_semaf_interseccion
+                    ON estados_semaforos(interseccion);
             """)
 
     def log_estado_inicial(self) -> None:
@@ -106,12 +120,10 @@ class BDPrincipal:
             log.info(f"[BD-PRINCIPAL]   Total registros: {total}")
             log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
         except Exception as exc:
-            log.warning(f"[BD-PRINCIPAL] No se pudo leer estado inicial: {exc}")   
-
+            log.warning(f"[BD-PRINCIPAL] No se pudo leer estado inicial: {exc}")
 
     def _despachar(self, mensaje: dict) -> None:
         tipo = mensaje.get("tipo_msg", "evento")
-
         if tipo == "evento":
             self._insertar_evento(mensaje)
         elif tipo == "semaforo":
@@ -123,7 +135,6 @@ class BDPrincipal:
         ts = (ev.get("timestamp") or
               ev.get("timestamp_fin") or
               ev.get("timestamp_inicio", ""))
-
         sql = """
             INSERT INTO eventos_sensores
             (sensor_id, tipo, interseccion, datos_json, timestamp, recibido_en)
@@ -181,22 +192,29 @@ class BDPrincipal:
                 try:
                     msg = json.loads(raw.decode())
                     self._despachar(msg)
-                except:
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
             except zmq.Again:
                 time.sleep(0.05)
 
-    def _hilo_ping(self) -> None:
+    def _hilo_consultas(self) -> None:
+        log.info("[BD-PRINCIPAL] Hilo REP consultas activo.")
         while self._activo:
             try:
-                self.pull_ping.recv_json(flags=zmq.NOBLOCK)
+                raw = self.rep_consultas.recv(flags=zmq.NOBLOCK)
+                try:
+                    req = json.loads(raw.decode())
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    self.rep_consultas.send_json({"ok": False, "error": f"JSON invalido: {e}"})
+                    continue
+                resp = manejar_consulta(self.conn, self._lock, req, rol=ROL)
+                self.rep_consultas.send_json(resp)
             except zmq.Again:
-                time.sleep(0.1)
+                time.sleep(0.02)
 
     def ejecutar(self) -> None:
-        threading.Thread(target=self._hilo_escritura, daemon=True).start()
-        threading.Thread(target=self._hilo_ping, daemon=True).start()
-
+        threading.Thread(target=self._hilo_escritura, daemon=True, name="bd-princ-escritura").start()
+        threading.Thread(target=self._hilo_consultas, daemon=True, name="bd-princ-consultas").start()
         try:
             while True:
                 time.sleep(1)
@@ -208,14 +226,14 @@ class BDPrincipal:
     def cerrar(self) -> None:
         self._activo = False
         self.pull_escritura.close()
-        self.pull_ping.close()
+        self.rep_consultas.close()
         self.ctx.term()
         self.conn.close()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="../PC1/config.json"),
+    parser.add_argument("--config", default="../PC1/config.json")
     parser.add_argument("--db", default=DB_PATH_DEFAULT)
     args = parser.parse_args()
 
