@@ -28,22 +28,22 @@
     "ciclos_ausencia_offline": 3
   },
   "red": {
-    "pc1_ip": "127.0.0.1",
-    "pc2_ip": "127.0.0.1",
-    "pc3_ip": "127.0.0.1",
+    "pc1_ip": "192.168.1.10",
+    "pc2_ip": "192.168.1.20",
+    "pc3_ip": "192.168.1.30",
     "sensor_espira_port": 5551,
     "sensor_camara_port": 5552,
-    "sensor_gps_port":    5553,
-    "broker_pub_port":    5560,
-    "failover_pub_port":  5561,
-    "bd_princ_port":      5580,
-    "bd_rep_port":        5581,
-    "semaf_port":         5590,
-    "monitor_rep_port":   5600,
+    "sensor_gps_port": 5553,
+    "broker_pub_port": 5560,
+    "failover_pub_port": 5561,
+    "bd_princ_port": 5580,
+    "bd_rep_port": 5581,
+    "semaf_port": 5590,
+    "monitor_rep_port": 5600,
     "monitor_failover_port": 5601,
     "analytics_cmd_port": 5565,
-    "health_ping_port":   5599,
-    "health_ack_port":    5570
+    "health_ping_port": 5599,
+    "health_ack_port": 5570
   },
   "seguridad": {
     "secret_key": "sd2026-javeriana"
