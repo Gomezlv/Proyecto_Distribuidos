@@ -1,0 +1,12 @@
+venv/
+PC2/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+experimentos/out/
+*.png
+*.csv
+.DS_Store
+.idea/
+.vscode/
