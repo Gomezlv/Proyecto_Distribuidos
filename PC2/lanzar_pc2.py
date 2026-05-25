@@ -6,52 +6,48 @@ import argparse
 import os
 import signal
 
-
 DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
     parser = argparse.ArgumentParser(description="Lanzar procesos de PC2")
-    parser.add_argument("--config", default="../PC1/config.json"),
+    parser.add_argument("--config", default="../PC1/config.json")
     args = parser.parse_args()
 
     procesos = []
 
     def lanzar(nombre, script):
-        cmd = [sys.executable,
-               os.path.join(DIRECTORIO, script),
-               "--config", args.config]
+        cmd = [sys.executable, os.path.join(DIRECTORIO, script), "--config", args.config]
         p = subprocess.Popen(cmd)
         procesos.append((nombre, p))
         print(f"[PC2] {nombre} iniciado (PID {p.pid})")
         return p
 
-    # 1. BD Replica — hace bind primero
-    lanzar("BD-Replica",    "db_replica.py")
+    lanzar("BD-Replica", "db_replica.py")
     time.sleep(0.8)
-
-    # 2. Control Semaforos — hace bind
+    lanzar("HealthMonitor", "health_monitor.py")
+    time.sleep(0.5)
     lanzar("CtrlSemaforos", "semaforos.py")
     time.sleep(0.8)
-
-    # 3. Analitica — conecta a todos los anteriores
-    lanzar("Analitica",     "analitica.py")
+    lanzar("Analitica", "analitica.py")
+    time.sleep(0.5)
+    lanzar("Monitor-Failover", "monitor_failover.py")
 
     print(f"\n[PC2] {len(procesos)} procesos activos. Ctrl+C para detener.\n")
 
     def apagar(sig, frame):
         print("\n[PC2] Apagando todos los procesos...")
-        for nombre, p in procesos:
+        for _, p in procesos:
             p.terminate()
         sys.exit(0)
 
-    signal.signal(signal.SIGINT,  apagar)
+    signal.signal(signal.SIGINT, apagar)
     signal.signal(signal.SIGTERM, apagar)
 
     while True:
         for nombre, p in procesos:
             if p.poll() is not None:
-                print(f"[PC2] ADVERTENCIA: {nombre} termino inesperadamente.")
+                print(f"[PC2] ADVERTENCIA: {nombre} terminó.")
         time.sleep(5)
 
 
