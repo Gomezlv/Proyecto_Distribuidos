@@ -29,8 +29,9 @@ import threading
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from sensor_base import cargar_config   # reutilizamos la función de carga
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sensor_base import cargar_config
 
 
 logging.basicConfig(

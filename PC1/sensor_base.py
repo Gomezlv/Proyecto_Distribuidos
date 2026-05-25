@@ -9,8 +9,13 @@ from abc import ABC, abstractmethod
 
 
 def cargar_config(ruta="config.json"):
-    with open(ruta, "r") as f:
-        return json.load(f)
+    import os
+    import sys
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from common.config_loader import cargar_config as _cargar
+    return _cargar(ruta)
 
 
 def ts_ahora():
