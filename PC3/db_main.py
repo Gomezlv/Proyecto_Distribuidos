@@ -1,22 +1,22 @@
 from __future__ import annotations
 import zmq
 import json
-import sqlite3
 import logging
 import threading
 import time
-import sys
-import os
 import argparse
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'PC1'))
-from sensor_base import cargar_config
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from common.config_loader import cargar_config
+from common.db_access import DatabaseStore
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(message)s",
-    datefmt="%H:%M:%S"
+    datefmt="%H:%M:%S",
 )
 log = logging.getLogger("BDPrincipal")
 
@@ -24,155 +24,31 @@ DB_PATH_DEFAULT = "principal.db"
 
 
 class BDPrincipal:
-
     def __init__(self, cfg: dict, db_path: str = DB_PATH_DEFAULT):
-        self.cfg     = cfg
-        self.db_path = db_path
+        self.cfg = cfg
         self._activo = True
-        self._lock   = threading.Lock()
-
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._crear_tablas()
-
+        self.store = DatabaseStore(db_path)
         red = cfg["red"]
-        self.ctx = zmq.Context()
 
-        # recibe datos de analítica
+        self.ctx = zmq.Context()
         self.pull_escritura = self.ctx.socket(zmq.PULL)
         self.pull_escritura.setsockopt(zmq.RCVHWM, 5000)
         self.pull_escritura.bind(f"tcp://0.0.0.0:{red['bd_princ_port']}")
 
-        # health check
-        self.pull_ping = self.ctx.socket(zmq.PULL)
-        self.pull_ping.bind(f"tcp://0.0.0.0:{red['health_ping_port']}")
+        self.rep_health = self.ctx.socket(zmq.REP)
+        self.rep_health.bind(f"tcp://0.0.0.0:{red['health_ack_port']}")
+        log.info(f"[BD-PRINCIPAL] REP health en tcp://0.0.0.0:{red['health_ack_port']}")
 
-        self.log_estado_inicial()
+        self._log_estado_inicial()
 
-    def _crear_tablas(self) -> None:
-        with self.conn:
-            self.conn.executescript("""
-                CREATE TABLE IF NOT EXISTS eventos_sensores (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sensor_id TEXT NOT NULL,
-                    tipo TEXT NOT NULL,
-                    interseccion TEXT NOT NULL,
-                    datos_json TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    recibido_en REAL NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS estados_semaforos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    interseccion TEXT NOT NULL,
-                    estado TEXT NOT NULL,
-                    duracion_seg INTEGER NOT NULL,
-                    motivo TEXT,
-                    timestamp TEXT NOT NULL,
-                    recibido_en REAL NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS alertas_congestion (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    interseccion TEXT NOT NULL,
-                    nivel TEXT NOT NULL,
-                    accion_tomada TEXT,
-                    datos_json TEXT,
-                    timestamp TEXT NOT NULL,
-                    recibido_en REAL NOT NULL
-                );
-            """)
-
-    def log_estado_inicial(self) -> None:
-        try:
-            tablas = {
-                "eventos_sensores":   "SELECT COUNT(*), MAX(timestamp) FROM eventos_sensores",
-                "estados_semaforos":  "SELECT COUNT(*), MAX(timestamp) FROM estados_semaforos",
-                "alertas_congestion": "SELECT COUNT(*), MAX(timestamp) FROM alertas_congestion",
-            }
-            log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
-            log.info(f"[BD-PRINCIPAL] Estado inicial de '{self.db_path}'")
-            log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
-
-            total = 0
-            for tabla, sql in tablas.items():
-                with self._lock:
-                    fila = self.conn.execute(sql).fetchone()
-                n   = fila[0] if fila[0] else 0
-                ult = fila[1] if fila[1] else "sin registros"
-                total += n
-                log.info(f"[BD-PRINCIPAL]   {tabla:<28} filas={n:<6} último={ult}")
-
-            log.info("[BD-PRINCIPAL] ──────────────────────────────────────")
-            log.info(f"[BD-PRINCIPAL]   Total registros: {total}")
-            log.info("[BD-PRINCIPAL] ══════════════════════════════════════")
-        except Exception as exc:
-            log.warning(f"[BD-PRINCIPAL] No se pudo leer estado inicial: {exc}")   
-
-
-    def _despachar(self, mensaje: dict) -> None:
-        tipo = mensaje.get("tipo_msg", "evento")
-
-        if tipo == "evento":
-            self._insertar_evento(mensaje)
-        elif tipo == "semaforo":
-            self._insertar_estado_semaforo(mensaje)
-        elif tipo == "alerta":
-            self._insertar_alerta(mensaje)
-
-    def _insertar_evento(self, ev: dict) -> None:
-        ts = (ev.get("timestamp") or
-              ev.get("timestamp_fin") or
-              ev.get("timestamp_inicio", ""))
-
-        sql = """
-            INSERT INTO eventos_sensores
-            (sensor_id, tipo, interseccion, datos_json, timestamp, recibido_en)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """
-        with self._lock:
-            self.conn.execute(sql, (
-                ev.get("sensor_id", ""),
-                ev.get("tipo_sensor", ""),
-                ev.get("interseccion", ""),
-                json.dumps(ev),
-                ts,
-                time.time()
-            ))
-            self.conn.commit()
-
-    def _insertar_estado_semaforo(self, cmd: dict) -> None:
-        sql = """
-            INSERT INTO estados_semaforos
-            (interseccion, estado, duracion_seg, motivo, timestamp, recibido_en)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """
-        with self._lock:
-            self.conn.execute(sql, (
-                cmd.get("interseccion", ""),
-                cmd.get("estado", ""),
-                cmd.get("duracion_seg", 0),
-                cmd.get("motivo", ""),
-                cmd.get("timestamp", ""),
-                time.time()
-            ))
-            self.conn.commit()
-
-    def _insertar_alerta(self, alerta: dict) -> None:
-        sql = """
-            INSERT INTO alertas_congestion
-            (interseccion, nivel, accion_tomada, datos_json, timestamp, recibido_en)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """
-        with self._lock:
-            self.conn.execute(sql, (
-                alerta.get("interseccion", ""),
-                alerta.get("nivel", ""),
-                alerta.get("accion_tomada", ""),
-                json.dumps(alerta),
-                alerta.get("timestamp", ""),
-                time.time()
-            ))
-            self.conn.commit()
+    def _log_estado_inicial(self) -> None:
+        resumen = self.store.resumen_tablas()
+        log.info("[BD-PRINCIPAL] Estado inicial de '%s'", self.store.db_path)
+        for tabla, info in resumen.items():
+            log.info(
+                "[BD-PRINCIPAL]   %s filas=%s último=%s",
+                tabla, info["filas"], info["ultimo"],
+            )
 
     def _hilo_escritura(self) -> None:
         while self._activo:
@@ -180,23 +56,31 @@ class BDPrincipal:
                 raw = self.pull_escritura.recv(flags=zmq.NOBLOCK)
                 try:
                     msg = json.loads(raw.decode())
-                    self._despachar(msg)
-                except:
-                    pass
+                    self.store.despachar(msg)
+                    log.info(
+                        "[BD-PRINCIPAL] Persistido %s | %s",
+                        msg.get("tipo_msg", "?"),
+                        msg.get("sensor_id", msg.get("interseccion", "?")),
+                    )
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    log.warning("[BD-PRINCIPAL] JSON inválido: %s", e)
             except zmq.Again:
                 time.sleep(0.05)
 
-    def _hilo_ping(self) -> None:
+    def _hilo_health(self) -> None:
         while self._activo:
             try:
-                self.pull_ping.recv_json(flags=zmq.NOBLOCK)
+                req = self.rep_health.recv_json(flags=zmq.NOBLOCK)
+                if req.get("tipo") == "ping":
+                    self.rep_health.send_json({"status": "ok", "rol": "principal"})
+                else:
+                    self.rep_health.send_json({"status": "error", "error": "tipo desconocido"})
             except zmq.Again:
                 time.sleep(0.1)
 
     def ejecutar(self) -> None:
-        threading.Thread(target=self._hilo_escritura, daemon=True).start()
-        threading.Thread(target=self._hilo_ping, daemon=True).start()
-
+        threading.Thread(target=self._hilo_escritura, daemon=True, name="bd-escritura").start()
+        threading.Thread(target=self._hilo_health, daemon=True, name="bd-health").start()
         try:
             while True:
                 time.sleep(1)
@@ -208,17 +92,16 @@ class BDPrincipal:
     def cerrar(self) -> None:
         self._activo = False
         self.pull_escritura.close()
-        self.pull_ping.close()
+        self.rep_health.close()
         self.ctx.term()
-        self.conn.close()
+        self.store.close()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="../PC1/config.json"),
+    parser.add_argument("--config", default="../PC1/config.json")
     parser.add_argument("--db", default=DB_PATH_DEFAULT)
     args = parser.parse_args()
-
     cfg = cargar_config(args.config)
     BDPrincipal(cfg, db_path=args.db).ejecutar()
 
