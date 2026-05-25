@@ -6,29 +6,27 @@ import argparse
 import os
 import signal
 
-
 DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Lanzar BD Principal (PC3)")
-    parser.add_argument("--config", default="../PC1/config.json"),
+    parser = argparse.ArgumentParser(description="Lanzar procesos de PC3")
+    parser.add_argument("--config", default="../PC1/config.json")
     args = parser.parse_args()
 
     procesos = []
 
     def lanzar(nombre, script):
-        cmd = [sys.executable,
-               os.path.join(DIRECTORIO, script),
-               "--config", args.config]
+        cmd = [sys.executable, os.path.join(DIRECTORIO, script), "--config", args.config]
         p = subprocess.Popen(cmd)
         procesos.append((nombre, p))
         print(f"[PC3] {nombre} iniciado (PID {p.pid})")
         return p
 
     lanzar("BD-Principal", "db_main.py")
-
-    print("\n[PC3] BD corriendo. Ctrl+C para detener.")
+    time.sleep(0.8)
+    lanzar("Monitor", "monitor.py")
+    print(f"\n[PC3] {len(procesos)} procesos activos. Ctrl+C para detener.\n")
 
     def apagar(sig, frame):
         print("\n[PC3] Apagando...")
@@ -42,7 +40,7 @@ def main():
     while True:
         for nombre, p in procesos:
             if p.poll() is not None:
-                print(f"[PC3] {nombre} terminó.")
+                print(f"[PC3] ADVERTENCIA: {nombre} terminó (código {p.returncode})")
         time.sleep(5)
 
 
