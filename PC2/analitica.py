@@ -193,8 +193,13 @@ class ServicioAnalitica:
         if not inter:
             return {"ok": False, "error": "interseccion requerida"}
 
-        log.info("[ANALITICA] PRIORIZACION manual %s %ss", inter, duracion)
+        alias = self.coordinador.alias(inter)
+        log.info(
+            "[ANALITICA] PRIORIZACION (ambulancia) %s (%s) %ss — rojo en conflictos primero",
+            alias, inter, duracion,
+        )
         t_sem = self._enviar_verde_coordinado(inter, duracion, EstadoTrafico.PRIORIZACION.value)
+        log.info("[ANALITICA] Ola verde activa; tras %ss vuelve evaluación por sensores", duracion)
         alerta = {
             "tipo_msg": "alerta",
             "interseccion": inter,
