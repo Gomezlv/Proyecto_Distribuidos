@@ -120,6 +120,15 @@ class ServicioAnalitica:
         datos = self.datos_interseccion.get(interseccion, {"Q": 0, "Vp": 50.0, "D": 0})
         return self.reglas.evaluar(datos["Q"], datos["Vp"], datos["D"]), datos["Q"], datos["Vp"], datos["D"]
 
+    def _hay_congestion_avenida(self) -> bool:
+        for inter in self.semaforos_cfg:
+            if not self.coordinador.es_avenida(inter):
+                continue
+            estado, _, _, _ = self._evaluar_congestion(inter)
+            if estado in (EstadoTrafico.CONGESTION, EstadoTrafico.SEVERO):
+                return True
+        return False
+
     def _enviar_comando_semaforo(self, interseccion: str, estado: str, duracion: int, motivo: str) -> float:
         cmd = {
             "tipo_msg": "semaforo",
@@ -210,6 +219,24 @@ class ServicioAnalitica:
         self._actualizar_datos_interseccion(evento)
         interseccion = evento.get("interseccion", "")
         estado, Q, Vp, D = self._evaluar_congestion(interseccion)
+
+        if (
+            not self.coordinador.es_avenida(interseccion)
+            and self._hay_congestion_avenida()
+        ):
+            duracion_rojo = self.coordinador.duracion_rojo("congestion")
+            log.info(
+                "[BLOQUEO] %s | avenida congestionada -> ROJO %ss (calle detenida)",
+                interseccion, duracion_rojo,
+            )
+            self._enviar_comando_semaforo(
+                interseccion, "ROJO", duracion_rojo, "bloqueo_avenida_congestionada",
+            )
+            ev = dict(evento)
+            ev["tipo_msg"] = "evento"
+            self._persistir(ev)
+            return
+
         duracion = self.reglas.calcular_duracion_verde(estado)
         log.info(
             "[%s] %s | Q=%s Vp=%s D=%s -> verde %ss",
