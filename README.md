@@ -1,91 +1,59 @@
-# Sustentación — Caso 1: Tráfico normal
+# Sustentación — Caso 2: Congestión en avenida
 
-Sistema distribuido de semáforos (Python 3.12 + ZeroMQ en 3 PCs). Esta rama demuestra **tráfico normal** sin congestión, con coordinación perpendicular y datos en BD principal y réplica.
+Demostración de **congestión en la avenida B** con priorización del flujo en esa vía y **detención prolongada** de las calles perpendiculares.
 
-## Objetivo del caso
+## Objetivo
 
-Mostrar que, con pocos semáforos y tráfico bajo, el sistema:
+- Sensores de avenida (`CAM-B2`, `CAM-B4`) publican tráfico **congestionado** (valores fijos).
+- Calles (`INT-A2`, `INT-C3`) permanecen en **ROJO 30 s** mientras la avenida está congestionada.
+- Semáforos de avenida reciben **VERDE 30 s** (congestión) frente a 15 s en tráfico normal.
 
-- Cambia luces **VERDE → ROJO** con tiempos predecibles (15 s).
-- Evita choques: si la **avenida** (`INT-B2`) está en verde, las **calles** perpendiculares (`INT-A2`, `INT-C3`) quedan en rojo.
-- Persiste eventos en **BD principal (PC3)** y **réplica (PC2)**.
+## Cuadrícula (4 semáforos)
 
-## Qué demuestra
-
-| Elemento | Evidencia |
-|----------|-----------|
-| 3 semáforos nombrados | Logs `Avenida-B2`, `Calle-A2`, `Calle-C3` |
-| Ciclo normal | `[ANALITICA] NORMAL` y verde 15 s |
-| Seguridad perpendicular | Rojo en calles antes del verde de avenida |
-| Persistencia | `scripts/ver_estado_bd.py` |
-
-## Requisitos
-
-- Python 3.12+, `pip install -r requirements.txt`
-- 3 PCs en red con IPs distintas en `PC1/config_sustent_caso1.json`
-- Puertos abiertos: 5551–5553, 5560, 5565, 5580–5581, 5590, 5570, 5600–5601
-
-## Configuración
-
-1. Copie y edite IPs en [`PC1/config_sustent_caso1.json`](PC1/config_sustent_caso1.json):
-
-```json
-"pc1_ip": "<IP_PC1>",
-"pc2_ip": "<IP_PC2>",
-"pc3_ip": "<IP_PC3>"
+```
+        Col2      Col3
+ A  |         | INT-A2  |
+ B  | INT-B2  | INT-B4  |  ← Avenida B (congestión)
+ C  |         | INT-C3  |
 ```
 
-2. Use la plantilla [`PC1/config_sustent.dist.json`](PC1/config_sustent.dist.json) como referencia.
+## Requisitos y configuración
 
-## Cómo ejecutar
+Igual que caso 1: Python 3.12+, 3 PCs, editar IPs en [`PC1/config_sustent_caso2.json`](PC1/config_sustent_caso2.json).
 
-**Orden:** PC3 → PC2 → PC1.
+## Ejecución
 
 ```bash
-# PC3
-cd PC3 && python lanzar_pc3.py --config ../PC1/config_sustent_caso1.json
-
-# PC2
-cd PC2 && python lanzar_pc2.py --config ../PC1/config_sustent_caso1.json
-
-# PC1
-cd PC1 && python lanzar_pc1.py --config config_sustent_caso1.json
+cd PC3 && python lanzar_pc3.py --config ../PC1/config_sustent_caso2.json
+cd PC2 && python lanzar_pc2.py --config ../PC1/config_sustent_caso2.json
+cd PC1 && python lanzar_pc1.py --config config_sustent_caso2.json
 ```
 
 ## Cómo probar
 
 ```bash
-# Consulta de una intersección (desde cualquier máquina con acceso a PC3)
-python PC3/consulta_cli.py --config PC1/config_sustent_caso1.json interseccion --interseccion INT-B2
-
-# Comparar BD principal y réplica
-python scripts/ver_estado_bd.py --veces 3
+bash scripts/demo_caso2.sh
+python PC3/consulta_cli.py --config PC1/config_sustent_caso2.json interseccion --interseccion INT-A2
 ```
-
-Guion interactivo: `bash scripts/demo_caso1.sh`
 
 ## Flujo de demostración (≤ 4 min)
 
-1. **0:00–0:30** — Arranque en PC3, PC2, PC1.
-2. **0:30–2:30** — Mostrar logs de semáforos: verde 15 s, luego rojo; al activar avenida, calles en rojo.
-3. **2:30–3:00** — `consulta_cli.py interseccion --interseccion INT-B2`.
-4. **3:00–4:00** — `ver_estado_bd.py`: conteos en principal y réplica creciendo.
+1. Arranque PC3 → PC2 → PC1.
+2. **1–2 min:** Logs `[CONGESTION] INT-B2` / `INT-B4` con `verde 30s`.
+3. Mostrar `[BLOQUEO] INT-A2` / `INT-C3` con **ROJO 30s** (comparar con 15 s del caso 1).
+4. Consulta BD de alertas: `consulta_cli.py interseccion` o revisar tabla `alertas_congestion` vía histórico.
 
 ## Resultado esperado
 
-- Logs `[SEMAFORO] Avenida-B2 (INT-B2) | ROJO → VERDE | Duración: 15s`.
-- Antes del verde de `INT-B2`, logs de `Calle-A2` y `Calle-C3` en **ROJO**.
-- Ambas bases con filas en `eventos_sensores` y `estados_semaforos`.
+- Avenida en verde extendido; calles en rojo **30 s** por `bloqueo_avenida_congestionada` o `conflicto_CONGESTION`.
+- Alertas de congestión persistidas en BD.
 
 ## Errores comunes
 
 | Problema | Solución |
 |----------|----------|
-| Sin datos en analítica | Verificar `pc1_ip` en config y que el broker esté arriba |
-| `pc3_ip` igual a `pc2_ip` | Asignar IPs distintas a cada PC |
-| Semáforos todo verde (watchdog) | Asegurar que analítica envía comandos; intervalo sensores 8 s |
-| Timeout en consulta | Firewall puerto 5600; PC3 debe estar activo |
+| Calles reciben verde | Verificar perfiles `congestion` en sensores CAM-B2/B4 |
+| No aparece CONGESTION | Q≥15 o Vp<10 en reglas; perfiles ya lo fijan |
+| Tiempos iguales a caso 1 | Usar `config_sustent_caso2.json`, no caso 1 |
 
-## Documentación técnica
-
-Ver [EXPLICACION_TECNICA.md](EXPLICACION_TECNICA.md) para la sustentación oral.
+Ver [EXPLICACION_TECNICA.md](EXPLICACION_TECNICA.md).
