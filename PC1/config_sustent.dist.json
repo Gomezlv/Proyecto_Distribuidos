@@ -1,0 +1,8 @@
+{
+  "_comentario": "Copiar sección red a config_sustent_caso4.json con IPs reales de las 3 PCs",
+  "red": {
+    "pc1_ip": "192.168.1.10",
+    "pc2_ip": "192.168.1.20",
+    "pc3_ip": "192.168.1.30"
+  }
+}
