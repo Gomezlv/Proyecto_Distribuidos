@@ -5,8 +5,9 @@ import logging
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sensor_base import SensorBase, cargar_config, ts_ahora
+from common.perfil_sensor import aplicar_perfil
 
 
 logging.basicConfig(
@@ -30,7 +31,7 @@ class SensorGPS(SensorBase):
 
     def __init__(self, sensor_id: str, interseccion: str, intervalo_seg: int,
                  broker_host: str, broker_port: int,
-                 vp_min=5, vp_max=60):
+                 vp_min=5, vp_max=60, sensor_cfg: dict | None = None):
         super().__init__(
             sensor_id=sensor_id,
             tipo_sensor="gps",
@@ -41,11 +42,16 @@ class SensorGPS(SensorBase):
         )
         self.vp_min = vp_min
         self.vp_max = vp_max
+        self._perfil = aplicar_perfil(sensor_cfg)
 
     def generar_evento(self) -> dict:
 
-        vp = round(random.uniform(self.vp_min, self.vp_max), 1)
-        nivel = calcular_nivel_congestion(vp)
+        if self._perfil:
+            vp = self._perfil["velocidad_promedio"]
+            nivel = self._perfil.get("nivel_congestion") or calcular_nivel_congestion(vp)
+        else:
+            vp = round(random.uniform(self.vp_min, self.vp_max), 1)
+            nivel = calcular_nivel_congestion(vp)
 
         return {
             "sensor_id":          self.sensor_id,
@@ -78,7 +84,8 @@ def main():
             interseccion=args.interseccion or match["interseccion"],
             intervalo_seg=args.intervalo or match["intervalo_seg"],
             broker_host=red["pc1_ip"],
-            broker_port=red["sensor_gps_port"]
+            broker_port=red["sensor_gps_port"],
+            sensor_cfg=match,
         )
         sensor.ejecutar()
     else:
@@ -91,7 +98,8 @@ def main():
                     interseccion=s["interseccion"],
                     intervalo_seg=s["intervalo_seg"],
                     broker_host=red["pc1_ip"],
-                    broker_port=red["sensor_gps_port"]
+                    broker_port=red["sensor_gps_port"],
+                    sensor_cfg=s,
                 )
                 t = threading.Thread(target=sensor.ejecutar, daemon=True, name=s["id"])
                 t.start()

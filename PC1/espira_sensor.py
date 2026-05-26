@@ -6,8 +6,9 @@ import sys
 import os
 from datetime import datetime, timezone, timedelta
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sensor_base import SensorBase, cargar_config, ts_ahora
+from common.perfil_sensor import aplicar_perfil
 
 
 logging.basicConfig(
@@ -23,7 +24,7 @@ class SensorEspira(SensorBase):
 
     def __init__(self, sensor_id: str, interseccion: str, intervalo_seg: int,
                  broker_host: str, broker_port: int,
-                 veh_min=0, veh_max=50):
+                 veh_min=0, veh_max=50, sensor_cfg: dict | None = None):
         super().__init__(
             sensor_id=sensor_id,
             tipo_sensor="espira_inductiva",
@@ -34,6 +35,7 @@ class SensorEspira(SensorBase):
         )
         self.veh_min = veh_min
         self.veh_max = veh_max
+        self._perfil = aplicar_perfil(sensor_cfg)
 
     def generar_evento(self) -> dict:
 
@@ -41,7 +43,10 @@ class SensorEspira(SensorBase):
         ts_inicio = (ahora - timedelta(seconds=self.INTERVALO_CONTEO)).strftime("%Y-%m-%dT%H:%M:%SZ")
         ts_fin    = ahora.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        vehiculos = random.randint(self.veh_min, self.veh_max)
+        if self._perfil:
+            vehiculos = self._perfil["vehiculos_contados"]
+        else:
+            vehiculos = random.randint(self.veh_min, self.veh_max)
 
         return {
             "sensor_id":          self.sensor_id,
@@ -75,7 +80,8 @@ def main():
             interseccion=args.interseccion or match["interseccion"],
             intervalo_seg=args.intervalo or match["intervalo_seg"],
             broker_host=red["pc1_ip"],
-            broker_port=red["sensor_espira_port"]
+            broker_port=red["sensor_espira_port"],
+            sensor_cfg=match,
         )
         sensor.ejecutar()
     else:
@@ -88,7 +94,8 @@ def main():
                     interseccion=s["interseccion"],
                     intervalo_seg=s["intervalo_seg"],
                     broker_host=red["pc1_ip"],
-                    broker_port=red["sensor_espira_port"]
+                    broker_port=red["sensor_espira_port"],
+                    sensor_cfg=s,
                 )
                 t = threading.Thread(target=sensor.ejecutar, daemon=True, name=s["id"])
                 t.start()
