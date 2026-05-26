@@ -1,59 +1,61 @@
-# Sustentación — Caso 2: Congestión en avenida
+# Sustentación — Caso 3: Monitoreo y consulta
 
-Demostración de **congestión en la avenida B** con priorización del flujo en esa vía y **detención prolongada** de las calles perpendiculares.
+Demuestra el **módulo de monitoreo** en PC3: priorización tipo ambulancia (ola verde) y **consultas a la base de datos**.
 
 ## Objetivo
 
-- Sensores de avenida (`CAM-B2`, `CAM-B4`) publican tráfico **congestionado** (valores fijos).
-- Calles (`INT-A2`, `INT-C3`) permanecen en **ROJO 30 s** mientras la avenida está congestionada.
-- Semáforos de avenida reciben **VERDE 30 s** (congestión) frente a 15 s en tráfico normal.
+1. **Ambulancia / ola verde:** verde prolongado en `INT-B2` (Avenida-B2) y rojo en calles que la cruzan; luego retorno al tráfico normal.
+2. **Consulta BD:** `priorizaciones` e `historico` vía `consulta_cli.py`.
 
-## Cuadrícula (4 semáforos)
+## Requisitos
 
-```
-        Col2      Col3
- A  |         | INT-A2  |
- B  | INT-B2  | INT-B4  |  ← Avenida B (congestión)
- C  |         | INT-C3  |
-```
-
-## Requisitos y configuración
-
-Igual que caso 1: Python 3.12+, 3 PCs, editar IPs en [`PC1/config_sustent_caso2.json`](PC1/config_sustent_caso2.json).
+- Python 3.12+, 3 PCs, [`PC1/config_sustent_caso3.json`](PC1/config_sustent_caso3.json) con IPs correctas.
+- Sistema arrancado: PC3 → PC2 → PC1.
 
 ## Ejecución
 
 ```bash
-cd PC3 && python lanzar_pc3.py --config ../PC1/config_sustent_caso2.json
-cd PC2 && python lanzar_pc2.py --config ../PC1/config_sustent_caso2.json
-cd PC1 && python lanzar_pc1.py --config config_sustent_caso2.json
+cd PC3 && python lanzar_pc3.py --config ../PC1/config_sustent_caso3.json
+cd PC2 && python lanzar_pc2.py --config ../PC1/config_sustent_caso3.json
+cd PC1 && python lanzar_pc1.py --config config_sustent_caso3.json
 ```
 
-## Cómo probar
+## Comandos clave
 
 ```bash
-bash scripts/demo_caso2.sh
-python PC3/consulta_cli.py --config PC1/config_sustent_caso2.json interseccion --interseccion INT-A2
+# Ambulancia (ola verde 45 s en avenida B2)
+python PC3/consulta_cli.py --config PC1/config_sustent_caso3.json \
+  ambulancia --interseccion INT-B2 --duracion 45
+
+# Consultas elegidas para la sustentación
+python PC3/consulta_cli.py --config PC1/config_sustent_caso3.json priorizaciones
+python PC3/consulta_cli.py --config PC1/config_sustent_caso3.json historico \
+  --t-ini 2026-01-01T00:00:00Z --t-fin 2026-12-31T23:59:59Z
 ```
+
+Guion: `bash scripts/demo_caso3.sh`
 
 ## Flujo de demostración (≤ 4 min)
 
-1. Arranque PC3 → PC2 → PC1.
-2. **1–2 min:** Logs `[CONGESTION] INT-B2` / `INT-B4` con `verde 30s`.
-3. Mostrar `[BLOQUEO] INT-A2` / `INT-C3` con **ROJO 30s** (comparar con 15 s del caso 1).
-4. Consulta BD de alertas: `consulta_cli.py interseccion` o revisar tabla `alertas_congestion` vía histórico.
+| Minuto | Acción |
+|--------|--------|
+| 0–1 | Tráfico base estable (sensores `normal`) |
+| 1–2 | Comando `ambulancia` → logs PRIORIZACION + semáforos |
+| 2–3 | Esperar fin de 45 s; observar vuelta a NORMAL |
+| 3–4 | `priorizaciones` + `historico` en pantalla |
 
 ## Resultado esperado
 
-- Avenida en verde extendido; calles en rojo **30 s** por `bloqueo_avenida_congestionada` o `conflicto_CONGESTION`.
-- Alertas de congestión persistidas en BD.
+- Respuesta JSON `ok: true` en ambulancia con latencia registrada.
+- Tabla `alertas_congestion` / priorizaciones con entrada `PRIORIZACION`.
+- Histórico con eventos de sensores y estados de semáforo.
 
 ## Errores comunes
 
 | Problema | Solución |
 |----------|----------|
-| Calles reciben verde | Verificar perfiles `congestion` en sensores CAM-B2/B4 |
-| No aparece CONGESTION | Q≥15 o Vp<10 en reglas; perfiles ya lo fijan |
-| Tiempos iguales a caso 1 | Usar `config_sustent_caso2.json`, no caso 1 |
+| `token inválido` | Mismo `secret_key` en config y monitor |
+| Timeout ambulancia | PC2 analítica activa; puerto 5565 abierto |
+| Consulta vacía | Ejecutar ambulancia antes; ampliar rango `--t-fin` |
 
 Ver [EXPLICACION_TECNICA.md](EXPLICACION_TECNICA.md).

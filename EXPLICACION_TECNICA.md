@@ -1,49 +1,51 @@
-# Explicación técnica — Caso 2: Congestión
+# Explicación técnica — Caso 3: Monitoreo y consulta
 
-## Arquitectura
+## Arquitectura del flujo ambulancia
 
-Misma topología 3 PCs del caso 1. La diferencia está en la **lógica de analítica** y los **perfiles de sensor**.
+```
+consulta_cli (REQ) → monitor.py PC3:5600 (REP)
+  → operacion comando_prioridad
+  → analitica.py PC2:5565 (REP)
+  → _enviar_verde_coordinado(INT-B2)
+       → ROJO conflictos (INT-A2, INT-C3) 30s
+       → VERDE INT-B2 45s
+  → persistencia alerta PRIORIZACION en BD
+```
 
-## Componentes modificados
+## Componentes
 
-- `PC2/analitica.py`: `_hay_congestion_avenida()` y bloqueo de calles.
-- `common/perfil_sensor.py`: perfiles `congestion` y `normal`.
-- `PC1/config_sustent_caso2.json`: 4 semáforos, cámaras en avenida con congestión simulada.
+| Componente | Función |
+|------------|---------|
+| `PC3/consulta_cli.py` | Cliente de demostración |
+| `PC3/monitor.py` | REQ/REP, delega a analítica |
+| `common/monitor_core.py` | SQL consultas |
+| `PC2/analitica.py` | `procesar_comando_manual` + coordinación |
 
 ## Decisiones técnicas
 
-1. **Congestión determinista** en sensores de avenida para demo reproducible.
-2. **Doble mecanismo de rojo en calles:**
-   - Al abrir verde en avenida: conflictos con `tiempo_rojo_congestion` (30 s).
-   - Si la calle reporta NORMAL pero la avenida sigue congestionada: comando explícito `bloqueo_avenida_congestionada`.
-3. **Verde 30 s** en avenida vía `ReglasTrafico.calcular_duracion_verde(CONGESTION)`.
-
-## Flujo interno
-
-```
-CAM-B2 (congestion) → Analítica → CONGESTION en INT-B2
-  → ROJO 30s en INT-A2, INT-C3 (conflictos)
-  → VERDE 30s en INT-B2
-
-ESP-A2 (normal) en INT-A2 mientras avenida congestionada
-  → [BLOQUEO] ROJO 30s (no se otorga verde a la calle)
-```
+- **REQ/REP** para comando crítico (ambulancia) con respuesta inmediata y latencia medible.
+- Coordinación perpendicular reutilizada: el profesor ve rojo en calles antes del verde de la ambulancia.
+- Consultas **`priorizaciones`** y **`historico`**: evidencian persistencia y trazabilidad post-demo.
 
 ## Patrones
 
-- Coordinador de dominio (`CoordinadorSemaforos`).
-- Evaluación por intersección con política global de avenida (estado derivado del conjunto de semáforos en fila B).
+- Cadena REQ/REP Monitor → Analítica.
+- Comando idempotente con `token` compartido en config.
+
+## Código relevante
+
+`procesar_comando_manual` valida token, llama `_enviar_verde_coordinado`, persiste alerta con `nivel: PRIORIZACION`.
 
 ## Riesgos
 
-- Si solo una cámara de avenida falla, `_hay_congestion_avenida` puede no detectar congestión en la otra intersección hasta recibir su evento.
-- Bloqueo de calles depende de que los sensores de avenida sigan publicando.
+- Si PC3 cae durante ambulancia, usar failover puerto 5601 (caso 4).
+- Duración de ola verde no cancela comandos posteriores de sensores; pueden superponerse ciclos (aceptable en demo).
 
 ## Mejoras futuras
 
-- Ventana deslizante de congestión por eje completo.
-- Publicar alerta única por avenida, no por intersección.
+- Cola de prioridades y cancelación explícita al fin de ambulancia.
+- API REST además de CLI.
 
 ## Guión oral
 
-"Mientras la avenida B está congestionada, forzamos rojo prolongado en las calles que la cruzan. Los logs muestran CONGESTION con 30 segundos de verde en avenida y BLOQUEO con 30 segundos de rojo en calle, frente a 15 segundos en el caso normal."
+"El operador envía ambulancia desde el CLI; el monitor en PC3 reenvía a analítica en PC2, que abre ola verde coordinada. Luego consultamos la BD para demostrar que la priorización quedó registrada junto con el histórico de eventos."
