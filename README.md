@@ -1,4 +1,5 @@
 # Gestión Inteligente de Tráfico Urbano
+Autores: Viviana Gómez, Sara Ocampo
 
 Sistema distribuido con **ZeroMQ** en 3 PCs: sensores y broker (PC1), analítica/semáforos/réplica (PC2), BD principal y monitoreo (PC3).
 
@@ -20,18 +21,6 @@ cp PC1/config.dist.json PC1/config.json
 ```
 
 2. Ajustar `pc1_ip`, `pc2_ip`, `pc3_ip` en `PC1/config.json`.
-
-| Puerto | Servicio |
-|--------|----------|
-| 5551–5553 | Sensores PUB |
-| 5560 | Broker PUB |
-| 5565 | Analítica REP (comandos) |
-| 5580 | BD principal PULL |
-| 5581 | BD réplica PULL |
-| 5590 | Semáforos PULL |
-| 5570 | Health REP (PC3) |
-| 5600 | Monitor REQ/REP (PC3) |
-| 5601 | Monitor failover REQ/REP (PC2) |
 
 ## Ejecución
 
@@ -82,35 +71,12 @@ Ver `scripts/demo_failover.sh` y `scripts/ver_estado_bd.py`.
 
 ## Experimentos de rendimiento
 
-Ver [experimentos/README.md](experimentos/README.md).
+[experimentos/README.md](experimentos/README.md).
 
 ```bash
 python experimentos/run_matriz.py
 python experimentos/plot_resultados.py
 ```
-
-## Documentación
-
-- [docs/guion_video.md](docs/guion_video.md)
-- [docs/informe_rendimiento.md](docs/informe_rendimiento.md)
-- [docs/checklist_sustentacion.md](docs/checklist_sustentacion.md)
-
-## Patrones ZMQ
-
-| Enlace | Patrón |
-|--------|--------|
-| Sensores → Broker → Analítica | PUB/SUB |
-| Analítica → BD / Semáforos | PUSH/PULL |
-| Cliente → Monitor | REQ/REP |
-| Monitor → Analítica (ambulancia) | REQ/REP |
-
-Analítica→semáforos usa PUSH/PULL (comandos asíncronos); documentar en informe de 1ª entrega.
-
-## Estructura del zip de entrega
-
-Incluir: `PC1/`, `PC2/`, `PC3/`, `common/`, `experimentos/`, `docs/`, `scripts/`, `tests/`, `requirements.txt`, `README.md`.
-
-**No incluir:** `venv/`, `*.db`, `__pycache__/`.
 
 ## Tests
 
