@@ -28,9 +28,9 @@
     "ciclos_ausencia_offline": 3
   },
   "red": {
-    "pc1_ip": "127.0.0.1",
-    "pc2_ip": "127.0.0.1",
-    "pc3_ip": "127.0.0.1",
+        "pc1_ip": "192.168.171.18",
+    "pc2_ip": "192.168.171.70",
+    "pc3_ip": "192.168.171.104",
     "sensor_espira_port": 5551,
     "sensor_camara_port": 5552,
     "sensor_gps_port":    5553,
