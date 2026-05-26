@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.config_loader import cargar_config
+from common.coordinacion import CoordinadorSemaforos
 from common.pc3_state import pc3_activo
 from common.protocol import OP_ANALITICA_PRIORIDAD
 from common.time_utils import ts_ahora
@@ -32,6 +33,8 @@ class ServicioAnalitica:
         red = cfg["red"]
         self.secret_key = cfg["seguridad"]["secret_key"]
         self.reglas = ReglasTrafico.desde_config(cfg["reglas"])
+        self.coordinador = CoordinadorSemaforos(cfg)
+        self.semaforos_cfg = set(cfg.get("semaforos", []))
         self.sensores_registry = {s["id"] for s in cfg["sensores"]}
         self.last_reading = {}
         self.sensor_intervalos = {s["id"]: s["intervalo_seg"] for s in cfg["sensores"]}
@@ -126,10 +129,32 @@ class ServicioAnalitica:
             "motivo": motivo,
             "token": self.secret_key,
             "timestamp": ts_ahora(),
+            "alias": self.coordinador.alias(interseccion),
         }
         self.push_semaf.send(json.dumps(cmd).encode())
         self._persistir(cmd)
         return time.time()
+
+    def _modo_rojo(self, motivo: str) -> str:
+        if motivo in (EstadoTrafico.CONGESTION.value, EstadoTrafico.SEVERO.value):
+            return "congestion"
+        if motivo == EstadoTrafico.PRIORIZACION.value:
+            return "priorizacion"
+        return "normal"
+
+    def _aplicar_rojos_conflictivos(self, interseccion: str, motivo: str) -> None:
+        modo = self._modo_rojo(motivo)
+        duracion_rojo = self.coordinador.duracion_rojo(modo)
+        for conflicto in self.coordinador.conflictos_de(interseccion):
+            if conflicto not in self.semaforos_cfg:
+                continue
+            self._enviar_comando_semaforo(
+                conflicto, "ROJO", duracion_rojo, f"conflicto_{motivo}",
+            )
+
+    def _enviar_verde_coordinado(self, interseccion: str, duracion: int, motivo: str) -> float:
+        self._aplicar_rojos_conflictivos(interseccion, motivo)
+        return self._enviar_comando_semaforo(interseccion, "VERDE", duracion, motivo)
 
     def _persistir(self, mensaje: dict) -> None:
         payload = json.dumps(mensaje, ensure_ascii=False).encode()
@@ -160,7 +185,7 @@ class ServicioAnalitica:
             return {"ok": False, "error": "interseccion requerida"}
 
         log.info("[ANALITICA] PRIORIZACION manual %s %ss", inter, duracion)
-        t_sem = self._enviar_comando_semaforo(inter, "VERDE", duracion, EstadoTrafico.PRIORIZACION.value)
+        t_sem = self._enviar_verde_coordinado(inter, duracion, EstadoTrafico.PRIORIZACION.value)
         alerta = {
             "tipo_msg": "alerta",
             "interseccion": inter,
@@ -199,7 +224,7 @@ class ServicioAnalitica:
                 "Q": Q, "Vp": Vp, "D": D,
                 "timestamp": ts_ahora(),
             })
-        self._enviar_comando_semaforo(interseccion, "VERDE", duracion, estado.value)
+        self._enviar_verde_coordinado(interseccion, duracion, estado.value)
         ev = dict(evento)
         ev["tipo_msg"] = "evento"
         self._persistir(ev)
