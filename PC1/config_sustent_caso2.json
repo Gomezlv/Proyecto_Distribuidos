@@ -1,0 +1,62 @@
+{
+  "ciudad": {"filas": ["A", "B", "C"], "columnas": [1, 2, 3, 4]},
+  "sensores": [
+    {"id": "CAM-B2", "tipo": "camara", "interseccion": "INT-B2", "intervalo_seg": 8, "perfil": "congestion"},
+    {"id": "CAM-B4", "tipo": "camara", "interseccion": "INT-B4", "intervalo_seg": 8, "perfil": "congestion"},
+    {"id": "ESP-A2", "tipo": "espira_inductiva", "interseccion": "INT-A2", "intervalo_seg": 8, "perfil": "normal"},
+    {"id": "GPS-C3", "tipo": "gps", "interseccion": "INT-C3", "intervalo_seg": 8, "perfil": "normal"}
+  ],
+  "semaforos": ["INT-B2", "INT-B4", "INT-A2", "INT-C3"],
+  "coordinacion": {
+    "avenida_filas": ["B"],
+    "tiempo_rojo_normal": 15,
+    "tiempo_rojo_congestion": 30,
+    "alias": {
+      "INT-B2": "Avenida-B2",
+      "INT-B4": "Avenida-B4",
+      "INT-A2": "Calle-A2",
+      "INT-C3": "Calle-C3"
+    },
+    "mapa_conflictos": {
+      "INT-B2": ["INT-A2", "INT-C3"],
+      "INT-B4": ["INT-A2", "INT-C3"],
+      "INT-A2": ["INT-B2", "INT-B4"],
+      "INT-C3": ["INT-B2", "INT-B4"]
+    }
+  },
+  "reglas": {
+    "Q_normal_max": 5,
+    "Vp_normal_min": 35.0,
+    "D_normal_max": 20,
+    "Q_congestion": 15,
+    "Vp_congestion": 10.0,
+    "Q_severo": 25,
+    "Vp_severo": 5.0,
+    "tiempo_verde_normal": 15,
+    "tiempo_verde_moderado": 20,
+    "tiempo_verde_congestion": 30,
+    "tiempo_verde_severo": 45,
+    "tiempo_rojo_default": 15,
+    "ciclos_ausencia_offline": 3
+  },
+  "red": {
+    "pc1_ip": "192.168.1.10",
+    "pc2_ip": "192.168.1.20",
+    "pc3_ip": "192.168.1.30",
+    "sensor_espira_port": 5551,
+    "sensor_camara_port": 5552,
+    "sensor_gps_port": 5553,
+    "broker_pub_port": 5560,
+    "failover_pub_port": 5561,
+    "bd_princ_port": 5580,
+    "bd_rep_port": 5581,
+    "semaf_port": 5590,
+    "monitor_rep_port": 5600,
+    "monitor_failover_port": 5601,
+    "analytics_cmd_port": 5565,
+    "health_ping_port": 5599,
+    "health_ack_port": 5570
+  },
+  "seguridad": {"secret_key": "sd2026-javeriana"},
+  "health_check": {"intervalo_seg": 5, "max_intentos": 3, "timeout_ms": 3000}
+}
