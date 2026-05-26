@@ -115,7 +115,7 @@ class ControlSemaforos:
         )
 
     def _hilo_ciclo(self) -> None:
-        """Tras VERDE expira → ROJO; tras ROJO expira permanece hasta nuevo comando."""
+        """Tras VERDE expira → ROJO; tras ROJO expira vuelve a VERDE."""
         while self._activo:
             time.sleep(0.5)
             with self._lock:
@@ -125,7 +125,7 @@ class ControlSemaforos:
                     if sem.estado == "VERDE":
                         sem.cambiar_estado("ROJO", sem.tiempo_rojo)
                     elif sem.estado == "ROJO":
-                        sem.ts_cambio = time.time()
+                        sem.cambiar_estado("VERDE", 15)
 
     def _modo_seguro(self) -> None:
         log.warning("[SEMAFOROS] WATCHDOG — modo seguro VERDE 15s")
