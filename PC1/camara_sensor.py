@@ -5,8 +5,9 @@ import logging
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sensor_base import SensorBase, cargar_config, ts_ahora
+from common.perfil_sensor import aplicar_perfil, volumen_aleatorio, velocidad_aleatoria
 
 
 logging.basicConfig(
@@ -20,7 +21,8 @@ class SensorCamara(SensorBase):
 
     def __init__(self, sensor_id: str, interseccion: str, intervalo_seg: int,
                  broker_host: str, broker_port: int,
-                 vol_min=0, vol_max=30, vp_min=5, vp_max=60):
+                 vol_min=0, vol_max=30, vp_min=5, vp_max=60,
+                 sensor_cfg: dict | None = None):
         super().__init__(
             sensor_id=sensor_id,
             tipo_sensor="camara",
@@ -33,13 +35,16 @@ class SensorCamara(SensorBase):
         self.vol_max = vol_max
         self.vp_min  = vp_min
         self.vp_max  = vp_max
+        self._perfil = aplicar_perfil(sensor_cfg)
 
     def generar_evento(self) -> dict:
 
-        volumen = random.randint(self.vol_min, self.vol_max)
-        # Correlación leve: más volumen → menos velocidad
-        vp_max_ajustado = max(self.vp_min + 2, self.vp_max - volumen)
-        velocidad = round(random.uniform(self.vp_min, vp_max_ajustado), 1)
+        if self._perfil:
+            volumen = self._perfil["volumen"]
+            velocidad = self._perfil["velocidad_promedio"]
+        else:
+            volumen = volumen_aleatorio(self.vol_min, self.vol_max)
+            velocidad = velocidad_aleatoria(self.vp_min, self.vp_max, volumen)
 
         return {
             "sensor_id":          self.sensor_id,
@@ -82,7 +87,8 @@ def main():
                     interseccion=s["interseccion"],
                     intervalo_seg=s["intervalo_seg"],
                     broker_host=red["pc1_ip"],
-                    broker_port=red["sensor_camara_port"]
+                    broker_port=red["sensor_camara_port"],
+                    sensor_cfg=s,
                 )
                 #Deamon= True. Muere el hilo si el proceso padre tambien muere.
                 t = threading.Thread(target=sensor.ejecutar, daemon=True, name=s["id"])
@@ -97,7 +103,8 @@ def main():
         interseccion=interseccion,
         intervalo_seg=intervalo,
         broker_host=red["pc1_ip"],
-        broker_port=red["sensor_camara_port"]
+        broker_port=red["sensor_camara_port"],
+        sensor_cfg=match,
     )
     sensor.ejecutar()
 
