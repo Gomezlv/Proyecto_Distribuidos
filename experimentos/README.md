@@ -33,9 +33,3 @@ python experimentos/plot_resultados.py
 ```
 
 Salida: `experimentos/out/*.csv` y `*.png`.
-
-## HW/SW (completar en informe)
-
-- CPU/RAM de las 3 máquinas o VMs
-- Python 3.12, pyzmq, matplotlib
-- Herramientas: scripts anteriores + logs de servicios
