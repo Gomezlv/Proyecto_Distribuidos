@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.config_loader import cargar_config
+from common.coordinacion import CoordinadorSemaforos
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +24,9 @@ T_WATCHDOG_DEFAULT = 60
 
 
 class Semaforo:
-    def __init__(self, interseccion: str, tiempo_rojo: int = 15):
+    def __init__(self, interseccion: str, tiempo_rojo: int = 15, alias: str | None = None):
         self.interseccion = interseccion
+        self.alias = alias or interseccion
         self.estado = "ROJO"
         self.duracion_seg = tiempo_rojo
         self.ts_cambio = time.time()
@@ -39,8 +41,8 @@ class Semaforo:
         self.duracion_seg = duracion
         self.ts_cambio = time.time()
         log.info(
-            "[SEMAFORO] %s | %s → %s | Duración: %ss",
-            self.interseccion, anterior, nuevo_estado, duracion,
+            "[SEMAFORO] %s (%s) | %s → %s | Duración: %ss",
+            self.alias, self.interseccion, anterior, nuevo_estado, duracion,
         )
 
     def tiempo_restante(self) -> float:
@@ -65,8 +67,11 @@ class ControlSemaforos:
         self.ultimo_cmd_ts = time.time()
         self._lock = threading.Lock()
 
+        self.coordinador = CoordinadorSemaforos(cfg)
         self.semaforos = {
-            intersec: Semaforo(intersec, self.tiempo_rojo)
+            intersec: Semaforo(
+                intersec, self.tiempo_rojo, self.coordinador.alias(intersec),
+            )
             for intersec in cfg.get("semaforos", [])
         }
         log.info("[SEMAFOROS] %s semáforos: %s", len(self.semaforos), list(self.semaforos.keys()))
@@ -96,12 +101,18 @@ class ControlSemaforos:
         estado = cmd.get("estado")
         duracion = cmd.get("duracion_seg", 15)
         motivo = cmd.get("motivo", "sin_motivo")
+        alias_cmd = cmd.get("alias") or self.coordinador.alias(interseccion)
         with self._lock:
             if interseccion not in self.semaforos:
-                self.semaforos[interseccion] = Semaforo(interseccion, self.tiempo_rojo)
+                self.semaforos[interseccion] = Semaforo(
+                    interseccion, self.tiempo_rojo, alias_cmd,
+                )
             self.semaforos[interseccion].cambiar_estado(estado, duracion)
         self.ultimo_cmd_ts = time.time()
-        log.info("[SEMAFOROS] Ejecutado | %s → %s | %ss | %s", interseccion, estado, duracion, motivo)
+        log.info(
+            "[SEMAFOROS] Ejecutado | %s (%s) → %s | %ss | %s",
+            alias_cmd, interseccion, estado, duracion, motivo,
+        )
 
     def _hilo_ciclo(self) -> None:
         """Tras VERDE expira → ROJO; tras ROJO expira permanece hasta nuevo comando."""
